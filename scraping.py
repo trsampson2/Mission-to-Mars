@@ -1,79 +1,140 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# Import Splinter, BeautifulSoup, and Pandas
 from splinter import Browser
 from bs4 import BeautifulSoup as soup
+import pandas as pd
+import datetime as dt
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-#Set up Splinter, set the executable path and initialze a browser
-executable_path = {'executable_path': ChromeDriverManager().install()}
-browser = Browser('chrome', **executable_path, headless=False)
+def scrape_all():
+    # Initiate headless driver for deployment
+    executable_path = {'executable_path': ChromeDriverManager().install()}
+    browser = Browser('chrome', **executable_path, headless=True)
 
-#creates an instance of a Splinter browser, preppring the automated browser.  Specifying Chrome as the browser
-# **executable_path is unpacking the dictionary we've stored the path in
+    news_title, news_paragraph = mars_news(browser)
 
+    # Run all scraping functions and store results in a dictionary
+    data = {
+        "news_title": news_title,
+        "news_paragraph": news_paragraph,
+        "featured_image": featured_image(browser),
+        "facts": mars_facts(),
+        "hemispheres": hemispheres(browser),
+        "last_modified": dt.datetime.now()
+        
+    }
 
-# Visit the Quotes to Scrape site
-url = 'http://quotes.toscrape.com/'
-browser.visit(url)
-
-# Tells the Splinter which site to go to by assigning the link to a URL
-
-# Parse the HTML using BeautifulSoup
-html = browser.html
-html_soup = soup(html, 'html.parser')
-
-#Beautiful soup is parsing the HTML text then then stores it as an object
-
-
-# Scrape the Title
-title = html_soup.find('h2').text
-title
-
-# using find fuction to search for the h2 tag and extracted only the text within the HTML tags by adding .text to the end of the code
+    # Stop webdriver and return data
+    browser.quit()
+    return data
 
 
-# Scrape the top ten tags
-tag_box = html_soup.find('div', class_='tags_box') # creates a new variable tag_box which will be used to store the results of a search. In this case, looking for div elements with a class of tags-box n the HTML parsed earlier and stored in the html_soup variable
-# tag_box
-tags = tag_box.find_all('a', class_='tag') # the tags variable will hold the results of a find_all but searching through the parsed results stored in our tag_box variable to find a elements with a tag class
+def mars_news(browser):
 
-for tag in tags:
-    word = tag.text
-    print(word)
+    # Scrape Mars News
+    # Visit the mars nasa news site
+    url = 'https://data-class-mars.s3.amazonaws.com/Mars/index.html'
+    browser.visit(url)
 
-# for loop cycles through each tag in the tags variable, strips the HTML code of it and then prints only the text of each tag
+    # Optional delay for loading the page
+    browser.is_element_present_by_css('div.list_text', wait_time=1)
 
-
-url = 'http://quotes.toscrape.com/'
-browser.visit(url)
-
-
-for x in range(1,6):
+    # Convert the browser html to a soup object and then quit the browser
     html = browser.html
-    quote_soup = soup(html, 'html.parser')
-    quotes = quote_soup.find_all('span', class_ = 'text')
-    for quote in quotes:
-        print('page:', x, '-----------')
-        print(quote.text)
-    browser.links.find_by_partial_text('Next').click()
+    news_soup = soup(html, 'html.parser')
+
+    # Add try/except for error handling
+    try:
+        slide_elem = news_soup.select_one('div.list_text')
+        # Use the parent element to find the first 'a' tag and save it as 'news_title'
+        news_title = slide_elem.find('div', class_='content_title').get_text()
+        # Use the parent element to find the paragraph text
+        news_p = slide_elem.find('div', class_='article_teaser_body').get_text()
+
+    except AttributeError:
+        return None, None
+
+    return news_title, news_p
 
 
-for x in range(1,6):
+def featured_image(browser):
+    # Visit URL
+    url = 'https://data-class-jpl-space.s3.amazonaws.com/JPL_Space/index.html'
+    browser.visit(url)
+
+    # Find and click the full image button
+    full_image_elem = browser.find_by_tag('button')[1]
+    full_image_elem.click()
+
+    # Parse the resulting html with soup
     html = browser.html
-    quote_soup = soup(html, 'html.parser')
-    quotes = quote_soup.find_all('span', class_ = 'quote')
-    for quote in quotes:
-        print('page:', x, '-----------')
-        print(quote.text)
-    browser.links.find_by_partial_text('Next').click()
+    img_soup = soup(html, 'html.parser')
 
-browser.quit()
+    # Add try/except for error handling
+    try:
+        # Find the relative image url
+        img_url_rel = img_soup.find('img', class_='fancybox-image').get('src')
+
+    except AttributeError:
+        return None
+
+    # Use the base url to create an absolute url
+    img_url = f'https://data-class-jpl-space.s3.amazonaws.com/JPL_Space/{img_url_rel}'
+
+    return img_url
+
+def mars_facts():
+    # Add try/except for error handling
+    try:
+        # Use 'read_html' to scrape the facts table into a dataframe
+        df = pd.read_html('https://data-class-mars-facts.s3.amazonaws.com/Mars_Facts/index.html')[0]
+
+    except BaseException:
+        return None
+
+    # Assign columns and set index of dataframe
+    df.columns=['Description', 'Mars', 'Earth']
+    df.set_index('Description', inplace=True)
+
+    # Convert dataframe into HTML format, add bootstrap
+    return df.to_html(classes="table table-striped")
 
 
+def hemispheres(browser):
+# 1. Use browser to visit the URL 
+    url = 'https://marshemispheres.com/'
+    browser.visit(url)
 
+# 2. Create a list to hold the images and titles.
+    hemisphere_image_urls = []
 
+# 3. Write code to retrieve the image urls and titles for each hemisphere.
+# finds hemisphere pictures
+    results = len(browser.find_by_css('a.product-item img'))
 
+# create for loop to find the links, click, the links, and give the url
+    for x in range(results):
+        hemisphere = {}
 
+    # find the links by css to click on
+        browser.find_by_css('a.product-item img')[x].click()
 
+    # Find the sample image anchor tag and take out the link
+        sample = browser.find_by_text('Sample')
+        hemisphere['img_url'] = sample['href']
+
+    # get title
+        hemisphere['title'] = browser.find_by_css('h2.title').text
+    
+    # add info to list
+        hemisphere_image_urls.append(hemisphere)
+
+    # go back
+        browser.back()
+
+# 4. Print the list that holds the dictionary of each image url and title.
+    return hemisphere_image_urls
+
+if __name__ == "__main__":
+    # If running as script, print scraped data
+    print(scrape_all())
